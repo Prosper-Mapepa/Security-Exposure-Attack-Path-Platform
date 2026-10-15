@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seap-web
+  namespace: seap
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: seap-web
+  template:
+    metadata:
+      labels:
+        app: seap-web
+    spec:
+      containers:
+        - name: web
+          image: seap-web:latest
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seap-web
+  namespace: seap
+spec:
+  selector:
+    app: seap-web
+  ports:
+    - port: 80
+      targetPort: 80

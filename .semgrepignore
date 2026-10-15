@@ -1,0 +1,6 @@
+lab
+tests/fixtures
+node_modules
+dist
+scan-data
+security-artifacts

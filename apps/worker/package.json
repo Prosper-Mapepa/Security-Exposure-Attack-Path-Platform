@@ -1,0 +1,26 @@
+{
+  "name": "@seap/worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@seap/attack-path-engine": "1.0.0",
+    "@seap/db": "1.0.0",
+    "@seap/integrations": "1.0.0",
+    "@seap/risk-engine": "1.0.0",
+    "@seap/scanner-adapters": "1.0.0",
+    "@seap/security": "1.0.0",
+    "@seap/shared": "1.0.0",
+    "bullmq": "^5.44.0",
+    "ioredis": "^5.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

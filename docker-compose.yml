@@ -1,0 +1,116 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: seap
+      POSTGRES_PASSWORD: seap
+      POSTGRES_DB: seap
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seap"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://seap:seap@postgres:5432/seap?schema=public
+      REDIS_URL: redis://redis:6379
+      SCAN_PATH_ALLOWLIST: /opt/lab,/opt/fixtures
+      SEMGREP_RULES_PATH: /opt/seap/rules
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./lab:/opt/lab:ro
+      - ./packages/scanner-adapters/rules:/opt/seap/rules:ro
+      - uploads:/app/uploads
+
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/worker.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://seap:seap@postgres:5432/seap?schema=public
+      REDIS_URL: redis://redis:6379
+      SCAN_PATH_ALLOWLIST: /opt/lab,/opt/fixtures
+      SCAN_WORKDIR: /var/lib/seap/scans
+      SEMGREP_RULES_PATH: /opt/seap/rules
+      ALLOW_PRIVATE_SCAN_TARGETS: "true"
+      LAB_NETWORK_CIDR: 172.16.0.0/12,10.0.0.0/8
+      ZAP_BASE_URL: http://zap:8091
+      ZAP_API_KEY: ${ZAP_API_KEY:-local-dev-zap-key}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./lab:/opt/lab:ro
+      - ./packages/scanner-adapters/rules:/opt/seap/rules:ro
+      - scan-data:/var/lib/seap/scans
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - api
+
+  lab:
+    profiles: ["lab"]
+    build:
+      context: ./lab
+    environment:
+      LAB_VULNERABLE: "true"
+      LAB_BIND: 0.0.0.0
+    ports:
+      - "127.0.0.1:8090:8090"
+
+  zap:
+    profiles: ["zap"]
+    image: ghcr.io/zaproxy/zaproxy:stable
+    command:
+      - zap.sh
+      - -daemon
+      - -host
+      - 0.0.0.0
+      - -port
+      - "8091"
+      - -config
+      - api.addrs.addr.name=.*
+      - -config
+      - api.addrs.addr.regex=true
+      - -config
+      - api.key=${ZAP_API_KEY:-local-dev-zap-key}
+    ports:
+      - "127.0.0.1:8091:8091"
+
+volumes:
+  postgres-data:
+  uploads:
+  scan-data:

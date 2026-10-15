@@ -1,0 +1,8 @@
+title = "SEAP product secret scan"
+
+[allowlist]
+description = "The development security lab is an intentional scan target and is excluded from the product gate."
+paths = [
+  '''(^|/)lab/''',
+  '''(^|/)tests/fixtures/''',
+]

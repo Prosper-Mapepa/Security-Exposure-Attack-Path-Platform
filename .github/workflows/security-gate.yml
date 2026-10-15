@@ -1,0 +1,51 @@
+name: Security gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      fail_on:
+        description: Minimum severity that fails the pipeline
+        required: true
+        default: HIGH
+        type: choice
+        options:
+          - CRITICAL
+          - HIGH
+          - MEDIUM
+          - LOW
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        run: npm ci
+      - name: Tests
+        run: npm run test:unit
+      - name: SAST
+        run: |
+          pip install semgrep
+          mkdir -p security-artifacts
+          semgrep scan --config packages/scanner-adapters/rules --json --metrics=off --quiet --exclude lab --exclude tests/fixtures . > security-artifacts/semgrep.json || true
+      - name: Dependency scan
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.58.1
+          trivy fs --format json --output security-artifacts/trivy.json --scanners vuln --skip-dirs lab --skip-dirs tests/fixtures --skip-dirs node_modules .
+      - name: Secret scan
+        run: |
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz" | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks detect --source . --config .gitleaks.toml --report-format json --report-path security-artifacts/gitleaks.json --no-banner --exit-code 0
+      - name: Container scan placeholder artifact
+        run: echo '{"Results":[]}' > security-artifacts/container.json
+      - name: Fail on threshold
+        env:
+          FAIL_ON: ${{ inputs.fail_on }}
+        run: node scripts/security-gate.mjs security-artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: security-artifacts
+          path: security-artifacts

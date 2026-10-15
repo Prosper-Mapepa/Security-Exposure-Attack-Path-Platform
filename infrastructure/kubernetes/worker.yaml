@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seap-worker
+  namespace: seap
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seap-worker
+  template:
+    metadata:
+      labels:
+        app: seap-worker
+    spec:
+      containers:
+        - name: worker
+          image: seap-worker:latest
+          envFrom:
+            - secretRef:
+                name: seap-runtime
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false

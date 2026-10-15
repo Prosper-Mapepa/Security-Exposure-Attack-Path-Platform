@@ -1,0 +1,38 @@
+{
+  "name": "security-exposure-platform",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Security Exposure & Attack Path Platform",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @seap/shared && npm run build -w @seap/security && npm run build -w @seap/risk-engine && npm run build -w @seap/attack-path-engine && npm run build -w @seap/scanner-adapters && npm run build -w @seap/integrations && npm run build -w @seap/db && npm run build -w @seap/api && npm run build -w @seap/worker && npm run build -w @seap/web",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run build -w @seap/shared && npm run build -w @seap/security && npm run build -w @seap/risk-engine && npm run build -w @seap/attack-path-engine && npm run build -w @seap/scanner-adapters && npm run build -w @seap/integrations && tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/worker/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit && tsc -p packages/db/tsconfig.json --noEmit",
+    "test": "npm run test -w @seap/security && npm run test -w @seap/risk-engine && npm run test -w @seap/attack-path-engine && npm run test -w @seap/scanner-adapters && npm run test -w @seap/api",
+    "test:unit": "npm run test -w @seap/security && npm run test -w @seap/risk-engine && npm run test -w @seap/attack-path-engine && npm run test -w @seap/scanner-adapters",
+    "test:e2e": "npm run test:e2e -w @seap/api",
+    "db:generate": "npm run prisma:generate -w @seap/db",
+    "db:migrate": "npm run prisma:migrate -w @seap/db",
+    "db:deploy": "npm run prisma:deploy -w @seap/db",
+    "db:seed": "npm run seed -w @seap/db",
+    "dev:api": "npm run start:dev -w @seap/api",
+    "dev:worker": "npm run start:dev -w @seap/worker",
+    "dev:web": "npm run dev -w @seap/web",
+    "security-gate": "node scripts/security-gate.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.21.0",
+    "eslint": "^9.21.0",
+    "prettier": "^3.5.2",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.25.0"
+  }
+}

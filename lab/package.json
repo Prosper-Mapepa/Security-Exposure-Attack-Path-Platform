@@ -1,0 +1,13 @@
+{
+  "name": "development-security-lab",
+  "private": true,
+  "version": "1.0.0",
+  "description": "DEVELOPMENT SECURITY LAB. Local scanner target only. Do not expose this service.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "lodash": "4.17.20"
+  }
+}

@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seap-api
+  namespace: seap
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: seap-api
+  template:
+    metadata:
+      labels:
+        app: seap-api
+    spec:
+      containers:
+        - name: api
+          image: seap-api:latest
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - secretRef:
+                name: seap-runtime
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 4000
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seap-api
+  namespace: seap
+spec:
+  selector:
+    app: seap-api
+  ports:
+    - port: 4000
+      targetPort: 4000

@@ -1,0 +1,25 @@
+rules:
+  - id: seap-sql-string-concat
+    message: SQL query is built by concatenating untrusted input. Use parameterized queries.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe:
+        - "CWE-89: SQL Injection"
+      likelihood: HIGH
+      references:
+        - https://cwe.mitre.org/data/definitions/89.html
+    pattern-either:
+      - pattern: $DB.query($A + $B)
+      - pattern: |
+          $QUERY = $A + $B
+          $DB.query($QUERY)
+  - id: seap-hardcoded-secret
+    message: Hardcoded credential assigned in source. Load secrets from a secret manager.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe:
+        - "CWE-798: Use of Hard-coded Credentials"
+      likelihood: HIGH
+    pattern-regex: (?i)(password\s*=\s*['"][^'"]+['"]|AKIA[0-9A-Z]{16})
