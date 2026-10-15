@@ -1,9 +1,13 @@
 FROM node:20-bookworm
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git python3 python3-pip openssl && rm -rf /var/lib/apt/lists/*
-RUN pip3 install --break-system-packages semgrep \
-  && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.58.1 \
-  && curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
+RUN set -eux; \
+  pip3 install --break-system-packages semgrep; \
+  curl -fsSL -o /tmp/trivy.tar.gz https://github.com/aquasecurity/trivy/releases/download/v0.76.0/trivy_0.76.0_Linux-64bit.tar.gz; \
+  tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy; \
+  curl -fsSL -o /tmp/gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz; \
+  tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks; \
+  rm -f /tmp/trivy.tar.gz /tmp/gitleaks.tar.gz
 COPY package.json package-lock.json* ./
 COPY apps/api/package.json apps/api/
 COPY apps/worker/package.json apps/worker/
