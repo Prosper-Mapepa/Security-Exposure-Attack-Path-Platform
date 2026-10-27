@@ -27,7 +27,13 @@ export class IncidentsController {
     const organizationId = requireOrganization(request.user!, organizationHeader);
     return this.prisma.db.incident.findMany({
       where: { organizationId, deletedAt: null },
-      include: { assignee: { select: { id: true, name: true } }, assets: true, findings: true },
+      include: {
+        assignee: { select: { id: true, name: true } },
+        assets: { include: { asset: { select: { id: true, name: true } } } },
+        findings: true,
+        events: true,
+        attackPaths: { include: { attackPath: { select: { id: true, title: true, score: true } } } },
+      },
       orderBy: { updatedAt: 'desc' },
     });
   }
@@ -41,6 +47,7 @@ export class IncidentsController {
     @Body(new ZodValidationPipe(createIncidentSchema)) body: z.infer<typeof createIncidentSchema>,
   ) {
     const organizationId = requireOrganization(request.user!, organizationHeader);
+    const linked = await this.linkedRecords(organizationId, body);
     const incident = await this.prisma.db.incident.create({
       data: {
         organizationId,
@@ -49,10 +56,10 @@ export class IncidentsController {
         severity: body.severity,
         assigneeId: body.assigneeId,
         createdById: request.user?.id,
-        assets: body.assetIds ? { create: body.assetIds.map((assetId) => ({ assetId })) } : undefined,
-        findings: body.vulnerabilityIds ? { create: body.vulnerabilityIds.map((vulnerabilityId) => ({ vulnerabilityId })) } : undefined,
-        events: body.eventIds ? { create: body.eventIds.map((eventId) => ({ eventId })) } : undefined,
-        attackPaths: body.attackPathIds ? { create: body.attackPathIds.map((attackPathId) => ({ attackPathId })) } : undefined,
+        assets: linked.assetIds.length ? { create: linked.assetIds.map((assetId) => ({ assetId })) } : undefined,
+        findings: linked.vulnerabilityIds.length ? { create: linked.vulnerabilityIds.map((vulnerabilityId) => ({ vulnerabilityId })) } : undefined,
+        events: linked.eventIds.length ? { create: linked.eventIds.map((eventId) => ({ eventId })) } : undefined,
+        attackPaths: linked.attackPathIds.length ? { create: linked.attackPathIds.map((attackPathId) => ({ attackPathId })) } : undefined,
         timeline: { create: { action: 'incident.opened', detail: body.title, actorId: request.user?.id } },
       },
     });
@@ -141,5 +148,48 @@ export class IncidentsController {
     const note = await this.prisma.db.incidentNote.create({ data: { incidentId: id, authorId: request.user?.id, body: body.body } });
     await this.prisma.db.incidentTimeline.create({ data: { incidentId: id, action: 'incident.note', detail: 'Note added', actorId: request.user?.id } });
     return note;
+  }
+
+  private async linkedRecords(
+    organizationId: string,
+    body: { assetIds?: string[]; vulnerabilityIds?: string[]; eventIds?: string[]; attackPathIds?: string[] },
+  ) {
+    const assetIds = new Set(body.assetIds ?? []);
+    const vulnerabilityIds = new Set(body.vulnerabilityIds ?? []);
+    const attackPathIds = body.attackPathIds ?? [];
+    if (attackPathIds.length > 0) {
+      const paths = await this.prisma.db.attackPath.findMany({
+        where: { organizationId, id: { in: attackPathIds } },
+        include: { nodes: { include: { networkNode: true } } },
+      });
+      for (const path of paths) {
+        for (const step of path.nodes) {
+          if (step.networkNode.assetId) assetIds.add(step.networkNode.assetId);
+          if (step.networkNode.kind === 'VULNERABILITY' && step.networkNode.stableKey.startsWith('vuln:')) {
+            vulnerabilityIds.add(step.networkNode.stableKey.slice('vuln:'.length));
+          }
+        }
+      }
+    }
+    if (assetIds.size > 0) {
+      const related = await this.prisma.db.vulnerability.findMany({
+        where: {
+          organizationId,
+          deletedAt: null,
+          assetId: { in: [...assetIds] },
+          severity: { in: ['CRITICAL', 'HIGH', 'MEDIUM'] },
+          status: { in: ['OPEN', 'ACKNOWLEDGED', 'IN_PROGRESS', 'REOPENED'] },
+        },
+        select: { id: true },
+        take: 50,
+      });
+      for (const item of related) vulnerabilityIds.add(item.id);
+    }
+    return {
+      assetIds: [...assetIds],
+      vulnerabilityIds: [...vulnerabilityIds],
+      eventIds: body.eventIds ?? [],
+      attackPathIds,
+    };
   }
 }

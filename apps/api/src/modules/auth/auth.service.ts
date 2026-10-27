@@ -4,7 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { DEFAULT_RISK_WEIGHTS, RISK_FORMULA_VERSION, type RoleName } from '@seap/shared';
+import { DEFAULT_RISK_WEIGHTS, RISK_FORMULA_VERSION } from '@seap/shared';
 import {
   decryptString,
   encryptString,
@@ -17,6 +17,7 @@ import {
 import type { Response } from 'express';
 import { clearAuthCookies, clientIp, newCsrfToken, setAuthCookies } from '../../common/http';
 import { PrismaService } from '../../common/prisma.module';
+import { resolvePlatformOrganization } from '../../common/tenant';
 import type { AppRequest } from '../../common/types';
 import { AuditService } from '../audit/audit.service';
 
@@ -125,13 +126,25 @@ export class AuthService {
       where: { id: user.id },
       data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
-    if (user.isPlatformAdmin && !input.organizationSlug) {
-      await this.audit.write({ userId: user.id, action: 'auth.login.success', resource: 'user', resourceId: user.id, ip, userAgent });
-      return this.issueSession(user.id, null, 'PLATFORM_ADMIN', true, request, response);
+    if (user.isPlatformAdmin) {
+      const organizationId = input.organizationSlug
+        ? (await this.prisma.db.organization.findFirst({ where: { slug: input.organizationSlug, deletedAt: null } }))?.id
+        : await resolvePlatformOrganization(this.prisma.db, null);
+      if (input.organizationSlug && !organizationId) throw new UnauthorizedException('Organization was not found');
+      await this.audit.write({
+        organizationId,
+        userId: user.id,
+        action: 'auth.login.success',
+        resource: 'user',
+        resourceId: user.id,
+        ip,
+        userAgent,
+      });
+      return this.issueSession(user.id, organizationId ?? null, 'PLATFORM_ADMIN', true, request, response);
     }
     const memberships = await this.prisma.db.membership.findMany({
       where: { userId: user.id },
-      include: { organization: true },
+      include: { organization: true, organizationRole: true },
     });
     const membership = input.organizationSlug
       ? memberships.find((item) => item.organization.slug === input.organizationSlug)
@@ -152,7 +165,7 @@ export class AuthService {
       ip,
       userAgent,
     });
-    return this.issueSession(user.id, membership.organizationId, membership.role, false, request, response);
+    return this.issueSession(user.id, membership.organizationId, membership.organizationRole?.name ?? membership.role, false, request, response);
   }
 
   async refresh(request: AppRequest, response: Response) {
@@ -312,9 +325,10 @@ export class AuthService {
     if (!user.isPlatformAdmin) {
       const membership = await this.prisma.db.membership.findUnique({
         where: { userId_organizationId: { userId: user.id, organizationId } },
+        include: { organizationRole: true },
       });
       if (!membership) throw new UnauthorizedException('Organization membership was not found');
-      return this.issueSession(user.id, organizationId, membership.role, false, request, response);
+      return this.issueSession(user.id, organizationId, membership.organizationRole?.name ?? membership.role, false, request, response);
     }
     const organization = await this.prisma.db.organization.findFirst({ where: { id: organizationId, deletedAt: null } });
     if (!organization) throw new UnauthorizedException('Organization was not found');
@@ -335,7 +349,7 @@ export class AuthService {
   private async issueSession(
     userId: string,
     organizationId: string | null,
-    role: RoleName,
+    role: string,
     isPlatformAdmin: boolean,
     request: AppRequest,
     response: Response,
@@ -377,14 +391,15 @@ export class AuthService {
   }
 
   private async sessionContext(userId: string, isPlatformAdmin: boolean, organizationId?: string | null) {
-    if (isPlatformAdmin) return { organizationId: organizationId ?? null, role: 'PLATFORM_ADMIN' as RoleName };
+    if (isPlatformAdmin) return { organizationId: organizationId ?? null, role: 'PLATFORM_ADMIN' };
     const membership = organizationId
       ? await this.prisma.db.membership.findUnique({
           where: { userId_organizationId: { userId, organizationId } },
+          include: { organizationRole: true },
         })
-      : await this.prisma.db.membership.findFirst({ where: { userId } });
+      : await this.prisma.db.membership.findFirst({ where: { userId }, include: { organizationRole: true } });
     if (!membership) throw new UnauthorizedException('Organization membership was not found');
-    return { organizationId: membership.organizationId, role: membership.role };
+    return { organizationId: membership.organizationId, role: membership.organizationRole?.name ?? membership.role };
   }
 
   private async verifyTotp(secret: string, code: string): Promise<boolean> {

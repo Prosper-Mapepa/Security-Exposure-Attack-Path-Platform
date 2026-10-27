@@ -29,6 +29,6 @@ export interface AuthPrincipal {
   email: string;
   name: string;
   organizationId: string | null;
-  role: import('./permissions').RoleName;
+  role: string;
   isPlatformAdmin: boolean;
 }

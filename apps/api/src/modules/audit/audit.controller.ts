@@ -34,14 +34,32 @@ export class AuditController {
           }
         : {}),
     };
-    const [total, data] = await this.prisma.db.$transaction([
+    const [total, rows] = await this.prisma.db.$transaction([
       this.prisma.db.auditLog.count({ where }),
       this.prisma.db.auditLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
+        include: { user: { select: { id: true, name: true, email: true } } },
         ...pageWindow(query.page, query.pageSize),
       }),
     ]);
+    const data = rows.map((entry) => {
+      const metadata = entry.metadata && typeof entry.metadata === 'object' && !Array.isArray(entry.metadata) ? entry.metadata : null;
+      const email = metadata && 'email' in metadata && typeof metadata.email === 'string' ? metadata.email : null;
+      const actor = entry.user
+        ? { name: entry.user.name, email: entry.user.email }
+        : email
+          ? { name: email, email }
+          : { name: 'System', email: null };
+      return {
+        id: entry.id,
+        createdAt: entry.createdAt,
+        action: entry.action,
+        resource: entry.resource,
+        resourceId: entry.resourceId,
+        actor,
+      };
+    });
     return { data, page: query.page, pageSize: query.pageSize, total };
   }
 }

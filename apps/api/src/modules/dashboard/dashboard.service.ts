@@ -43,8 +43,13 @@ export class DashboardService {
         take: 8,
       }),
       this.prisma.db.vulnerability.findMany({
-        where: { organizationId, status: 'RESOLVED', resolvedAt: { not: null } },
-        select: { firstSeen: true, resolvedAt: true },
+        where: {
+          organizationId,
+          deletedAt: null,
+          resolvedAt: { not: null },
+          status: { in: ['RESOLVED', 'MITIGATED'] },
+        },
+        select: { id: true, firstSeen: true, resolvedAt: true },
         take: 500,
       }),
       this.prisma.db.riskSnapshot.findMany({
@@ -55,10 +60,25 @@ export class DashboardService {
     ]);
     const count = (severity: string) => grouped.find((row) => row.severity === severity)?._count ?? 0;
     const openScores = await this.prisma.db.vulnerability.aggregate({ where: openWhere, _avg: { riskScore: true } });
-    const durations = resolved
-      .map((item) => (item.resolvedAt && item.firstSeen ? item.resolvedAt.getTime() - item.firstSeen.getTime() : 0))
-      .filter((value) => value > 0);
-    const mttrHours = durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length / 3_600_000) : null;
+    const validationResolved = await this.prisma.db.validationRun.findMany({
+      where: {
+        organizationId,
+        outcome: 'RESOLVED',
+        completedAt: { not: null },
+        vulnerabilityId: { notIn: resolved.map((item) => item.id) },
+      },
+      select: { completedAt: true, vulnerability: { select: { firstSeen: true } } },
+      take: 500,
+    });
+    const durations = [
+      ...resolved.map((item) => (item.resolvedAt && item.firstSeen ? item.resolvedAt.getTime() - item.firstSeen.getTime() : 0)),
+      ...validationResolved.map((item) =>
+        item.completedAt && item.vulnerability.firstSeen ? item.completedAt.getTime() - item.vulnerability.firstSeen.getTime() : 0,
+      ),
+    ].filter((value) => value > 0);
+    const mttrHours = durations.length
+      ? Math.round((durations.reduce((sum, value) => sum + value, 0) / durations.length / 3_600_000) * 10) / 10
+      : null;
     const assetIds = byAsset.map((row) => row.assetId);
     const assets = await this.prisma.db.asset.findMany({ where: { id: { in: assetIds } }, select: { id: true, name: true } });
     return {

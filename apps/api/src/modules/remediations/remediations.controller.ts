@@ -40,7 +40,7 @@ export class RemediationsController {
   list(@Req() request: AppRequest, @Headers('x-organization-id') organizationHeader: string | undefined) {
     return this.prisma.db.remediation.findMany({
       where: { organizationId: requireOrganization(request.user!, organizationHeader) },
-      include: { vulnerability: true, assignee: { select: { id: true, name: true } }, tasks: true },
+      include: { vulnerability: { include: { asset: { select: { id: true, name: true } } } }, assignee: { select: { id: true, name: true } }, tasks: true },
       orderBy: { updatedAt: 'desc' },
     });
   }
@@ -56,27 +56,49 @@ export class RemediationsController {
     const organizationId = requireOrganization(request.user!, organizationHeader);
     const vulnerability = await this.prisma.db.vulnerability.findFirst({ where: { id: body.vulnerabilityId, organizationId, deletedAt: null } });
     if (!vulnerability) throw new NotFoundException('Vulnerability was not found');
-    const remediation = await this.prisma.db.remediation.create({
-      data: {
-        organizationId,
-        vulnerabilityId: vulnerability.id,
-        assigneeId: body.assigneeId,
-        dueAt: body.dueAt ? new Date(body.dueAt) : null,
-        notes: body.notes,
-        status: body.assigneeId ? 'ASSIGNED' : 'OPEN',
-        tasks: body.taskTitle ? { create: { title: body.taskTitle, assigneeId: body.assigneeId, dueAt: body.dueAt ? new Date(body.dueAt) : null } } : undefined,
-      },
+    const active = await this.prisma.db.remediation.findFirst({
+      where: { organizationId, vulnerabilityId: vulnerability.id, status: { notIn: ['VALIDATED', 'CLOSED'] } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const dueAt = body.dueAt ? new Date(body.dueAt) : active?.dueAt ?? null;
+    const remediation = active
+      ? await this.prisma.db.remediation.update({
+          where: { id: active.id },
+          data: {
+            assigneeId: body.assigneeId,
+            dueAt,
+            notes: body.notes ?? active.notes,
+            status: body.assigneeId ? 'ASSIGNED' : 'OPEN',
+          },
+        })
+      : await this.prisma.db.remediation.create({
+          data: {
+            organizationId,
+            vulnerabilityId: vulnerability.id,
+            assigneeId: body.assigneeId,
+            dueAt,
+            notes: body.notes,
+            status: body.assigneeId ? 'ASSIGNED' : 'OPEN',
+            tasks: body.taskTitle ? { create: { title: body.taskTitle, assigneeId: body.assigneeId, dueAt } } : undefined,
+          },
+        });
+    if (active && body.taskTitle) {
+      const existingTask = await this.prisma.db.remediationTask.findFirst({ where: { remediationId: remediation.id, title: body.taskTitle } });
+      if (!existingTask) await this.prisma.db.remediationTask.create({ data: { remediationId: remediation.id, title: body.taskTitle, assigneeId: body.assigneeId, dueAt } });
+    }
+    await this.prisma.db.remediation.updateMany({
+      where: { organizationId, vulnerabilityId: vulnerability.id, id: { not: remediation.id }, status: { notIn: ['VALIDATED', 'CLOSED'] } },
+      data: { status: 'CLOSED' },
     });
     await this.prisma.db.vulnerability.update({ where: { id: vulnerability.id }, data: { status: 'IN_PROGRESS' } });
-    await this.audit.write({
+    const auditBase = {
       organizationId,
       userId: request.user?.id,
-      action: 'remediation.create',
-      resource: 'remediation',
-      resourceId: remediation.id,
       ip: clientIp(request.header('x-forwarded-for'), request.ip),
       userAgent: request.header('user-agent'),
-    });
+      metadata: { assigneeId: body.assigneeId ?? null, remediationId: remediation.id },
+    };
+    await this.audit.write({ ...auditBase, action: active ? 'remediation.assign' : 'remediation.create', resource: 'remediation', resourceId: remediation.id });
     return remediation;
   }
 
@@ -113,6 +135,18 @@ export class RemediationsController {
         status: body.status,
       },
     });
+    if (body.status === 'CLOSED') {
+      const vulnerability = await this.prisma.db.vulnerability.findFirst({
+        where: { id: existing.vulnerabilityId, organizationId, deletedAt: null },
+      });
+      if (vulnerability && !['RESOLVED', 'MITIGATED'].includes(vulnerability.status)) {
+        await this.prisma.db.vulnerability.update({
+          where: { id: vulnerability.id },
+          data: { status: 'MITIGATED', resolvedAt: vulnerability.resolvedAt ?? new Date() },
+        });
+        await this.prisma.db.finding.updateMany({ where: { vulnerabilityId: vulnerability.id }, data: { status: 'MITIGATED' } });
+      }
+    }
     await this.audit.write({
       organizationId,
       userId: request.user?.id,
@@ -121,6 +155,7 @@ export class RemediationsController {
       resourceId: id,
       ip: clientIp(request.header('x-forwarded-for'), request.ip),
       userAgent: request.header('user-agent'),
+      metadata: { status: body.status ?? existing.status },
     });
     return remediation;
   }

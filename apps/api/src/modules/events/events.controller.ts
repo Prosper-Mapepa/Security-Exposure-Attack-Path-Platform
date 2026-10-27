@@ -39,7 +39,7 @@ export class EventsController {
         severity: body.severity,
         sourceIp: body.sourceIp,
         destinationIp: body.destinationIp,
-        actor: body.actor,
+        actor: body.actor || request.user?.email || request.user?.name,
         assetId: body.assetId,
         detectionId: detection?.id,
         rawEvent: maskUnknown(body.rawEvent) as Prisma.InputJsonValue,
@@ -82,9 +82,24 @@ export class EventsController {
     };
     const [total, data] = await this.prisma.db.$transaction([
       this.prisma.db.securityEvent.count({ where }),
-      this.prisma.db.securityEvent.findMany({ where, orderBy: { timestamp: 'desc' }, ...pageWindow(query.page, query.pageSize) }),
+      this.prisma.db.securityEvent.findMany({
+        where,
+        orderBy: { timestamp: 'desc' },
+        include: { incidents: { include: { incident: { select: { id: true, title: true } } } } },
+        ...pageWindow(query.page, query.pageSize),
+      }),
     ]);
-    return { data, page: query.page, pageSize: query.pageSize, total };
+    const assetIds = [...new Set(data.flatMap((event) => (event.assetId ? [event.assetId] : [])))];
+    const assets = assetIds.length
+      ? await this.prisma.db.asset.findMany({ where: { id: { in: assetIds } }, select: { id: true, name: true } })
+      : [];
+    const names = new Map(assets.map((asset) => [asset.id, asset.name]));
+    return {
+      data: data.map((event) => ({ ...event, asset: event.assetId ? { id: event.assetId, name: names.get(event.assetId) ?? 'Unknown asset' } : null })),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
   }
 
   @Get('threats')

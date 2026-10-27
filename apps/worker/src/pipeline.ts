@@ -3,7 +3,7 @@ import { prisma, type AssetType, type EdgeType, type NodeKind, type Prisma } fro
 import { createEmailAdapter } from '@seap/integrations';
 import { calculateRisk, type RiskInput } from '@seap/risk-engine';
 import { bindFindingToAsset, createScanner, runCommand, type NormalizedFinding } from '@seap/scanner-adapters';
-import { assertSafeScanUrl, isPathInsideAllowlist, maskSecrets } from '@seap/security';
+import { assertSafeScanUrl, isPathInsideAllowlist, maskSecrets, resolveScanAllowlist } from '@seap/security';
 import { DEFAULT_RISK_WEIGHTS, explainPolicyViolation, type RiskWeights } from '@seap/shared';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -90,7 +90,7 @@ export async function executeScan(scanId: string): Promise<void> {
 
 async function prepareLocation(targetType: string, location: string, workdir: string, signal: AbortSignal): Promise<string> {
   if (targetType === 'PATH') {
-    const allowlist = (process.env.SCAN_PATH_ALLOWLIST ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+    const allowlist = resolveScanAllowlist(process.env.SCAN_PATH_ALLOWLIST);
     if (!isPathInsideAllowlist(location, allowlist)) throw new Error('Scan path is outside the configured allowlist');
     return path.resolve(location);
   }
@@ -356,22 +356,42 @@ export async function rebuildGraph(organizationId: string): Promise<void> {
   const discovered = discoverAttackPaths(
     graphNodes.map((node) => toEngineNode(node)),
     graphEdges.map((edge) => ({ id: edge.id, source: edge.sourceId, target: edge.targetId, type: edge.type })),
+    { maxPaths: 2000 },
   );
+  const kindById = new Map(graphNodes.map((node) => [node.id, node.kind]));
+  const routes = new Map<string, { path: (typeof discovered)[number]; findings: Set<string> }>();
+  for (const path of discovered) {
+    const key = path.nodeIds.map((id) => (kindById.get(id) === 'VULNERABILITY' ? 'vulnerability' : id)).join('>');
+    const findings = path.nodeIds.filter((id) => kindById.get(id) === 'VULNERABILITY');
+    const existing = routes.get(key);
+    if (!existing) routes.set(key, { path, findings: new Set(findings) });
+    else {
+      for (const id of findings) existing.findings.add(id);
+      if (path.score > existing.path.score) existing.path = path;
+    }
+  }
   const sensitive = new Set(
     graphNodes.filter((node) => {
       const properties = objectProps(node.properties);
-      return node.kind === 'DATABASE' || properties.dataSensitivity === 'RESTRICTED' || properties.dataSensitivity === 'CONFIDENTIAL' || properties.privileged === true || properties.criticality === 'CRITICAL';
+      return node.kind === 'DATABASE' || node.kind === 'S3_BUCKET' || node.kind === 'IAM_ROLE' || properties.dataSensitivity === 'RESTRICTED' || properties.dataSensitivity === 'CONFIDENTIAL' || properties.privileged === true || properties.criticality === 'CRITICAL';
     }).map((node) => node.id),
   );
   const sensitivePathNodes = new Set<string>();
   for (const path of discovered) {
+    if (sensitive.has(path.sinkNodeId)) {
+      for (const nodeId of path.nodeIds) sensitivePathNodes.add(nodeId);
+    }
+  }
+  for (const route of routes.values()) {
+    const path = route.path;
+    const summary = route.findings.size === 1 ? path.summary : `${path.summary}. ${route.findings.size} open findings share this route.`;
     await prisma.attackPath.create({
       data: {
         organizationId,
         signature: path.signature,
         title: path.title.slice(0, 500),
         score: path.score,
-        summary: path.summary,
+        summary: summary.slice(0, 2000),
         stepCount: path.stepCount,
         entryNodeId: path.entryNodeId,
         sinkNodeId: path.sinkNodeId,
@@ -394,12 +414,11 @@ export async function rebuildGraph(organizationId: string): Promise<void> {
       },
     });
     if (sensitive.has(path.sinkNodeId)) {
-      for (const nodeId of path.nodeIds) sensitivePathNodes.add(nodeId);
       await notify(organizationId, null, 'attack-path.discovered', 'Attack path discovered', path.title.slice(0, 240));
     }
   }
   await refreshRisk(organizationId, new Set(discovered.flatMap((path) => path.nodeIds)), sensitivePathNodes);
-  log('graph.rebuilt', { organizationId, paths: discovered.length });
+  log('graph.rebuilt', { organizationId, paths: routes.size, discovered: discovered.length });
 }
 
 async function refreshRisk(organizationId: string, pathNodeIds: Set<string>, sensitivePathNodes: Set<string>) {

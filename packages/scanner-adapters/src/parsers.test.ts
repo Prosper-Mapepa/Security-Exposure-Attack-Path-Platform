@@ -86,6 +86,7 @@ describe('scanner parsers', () => {
     expect(findings[0]?.evidence).not.toContain('AKIAIOSFODNN7EXAMPLE');
     expect(findings[0]?.evidence).toContain('[REDACTED]');
     expect(findings[0]?.cwe).toBe('CWE-798');
+    expect(findings[0]?.cvss).toBe(7.5);
   });
 
   it('normalizes ZAP alerts', () => {

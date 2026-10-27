@@ -1,4 +1,4 @@
-import type { Permission, RoleName } from '@seap/shared';
+import type { Permission } from '@seap/shared';
 import type { Request } from 'express';
 
 export interface RequestUser {
@@ -6,7 +6,7 @@ export interface RequestUser {
   email: string;
   name: string;
   organizationId: string | null;
-  role: RoleName;
+  role: string;
   isPlatformAdmin: boolean;
   permissions: Permission[];
 }

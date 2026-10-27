@@ -34,7 +34,10 @@ export class FindingsService {
       this.prisma.db.vulnerability.count({ where }),
       this.prisma.db.vulnerability.findMany({
         where,
-        include: { asset: { select: { id: true, name: true, criticality: true, exposure: true } }, findings: { select: { source: true, location: true } } },
+        include: {
+          asset: { select: { id: true, name: true, criticality: true, exposure: true } },
+          findings: { select: { source: true, location: true, scan: { select: { id: true, name: true, createdAt: true } } } },
+        },
         orderBy: [{ riskScore: 'desc' }, { lastSeen: 'desc' }],
         ...pageWindow(query.page, query.pageSize),
       }),
@@ -63,7 +66,7 @@ export class FindingsService {
         asset: true,
         findings: { include: { evidence: true, scan: true } },
         remediations: { include: { tasks: true, comments: { include: { author: { select: { id: true, name: true } } } }, assignee: { select: { id: true, name: true } } } },
-        validations: { orderBy: { createdAt: 'desc' } },
+        validations: { orderBy: { createdAt: 'desc' }, include: { scan: { select: { id: true, status: true, name: true } } } },
       },
     });
     if (!vulnerability) throw new NotFoundException('Vulnerability was not found');
@@ -74,23 +77,53 @@ export class FindingsService {
           include: { nodes: { orderBy: { position: 'asc' }, include: { networkNode: true } }, edges: { orderBy: { position: 'asc' } } },
         })
       : [];
+    const remediationIds = vulnerability.remediations.map((item) => item.id);
+    const validationScanIds = vulnerability.validations.flatMap((item) => (item.scanId ? [item.scanId] : []));
     const audit = await this.prisma.db.auditLog.findMany({
-      where: { organizationId, resourceId: id },
+      where: {
+        organizationId,
+        OR: [
+          { resourceId: id },
+          ...(remediationIds.length ? [{ resource: 'remediation' as const, resourceId: { in: remediationIds } }] : []),
+          ...(validationScanIds.length ? [{ resource: 'scan' as const, resourceId: { in: validationScanIds } }] : []),
+        ],
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
+    const userIds = [...new Set(audit.flatMap((entry) => (entry.userId ? [entry.userId] : [])))];
+    const users = userIds.length
+      ? await this.prisma.db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } })
+      : [];
+    const names = new Map(users.map((user) => [user.id, user.name]));
     const guidance = securePatternForCwe(vulnerability.cwe ?? undefined);
-    return { vulnerability, attackPaths, audit, securePattern: guidance };
+    return {
+      vulnerability,
+      attackPaths,
+      audit: audit.map((entry) => ({ ...entry, userName: entry.userId ? names.get(entry.userId) ?? null : null })),
+      securePattern: guidance,
+    };
   }
 
   async updateStatus(organizationId: string, id: string, status: FindingStatus, request: AppRequest, note?: string) {
     const current = await this.prisma.db.vulnerability.findFirst({ where: { id, organizationId, deletedAt: null } });
     if (!current) throw new NotFoundException('Vulnerability was not found');
+    const closed = status === 'RESOLVED' || status === 'MITIGATED';
+    const reopened = status === 'OPEN' || status === 'ACKNOWLEDGED' || status === 'IN_PROGRESS' || status === 'REOPENED';
     const updated = await this.prisma.db.vulnerability.update({
       where: { id },
-      data: { status, resolvedAt: status === 'RESOLVED' ? new Date() : null },
+      data: {
+        status,
+        resolvedAt: closed ? current.resolvedAt ?? new Date() : reopened ? null : current.resolvedAt,
+      },
     });
     await this.prisma.db.finding.updateMany({ where: { vulnerabilityId: id }, data: { status } });
+    if (closed) {
+      await this.prisma.db.remediation.updateMany({
+        where: { vulnerabilityId: id, status: { notIn: ['VALIDATED', 'CLOSED'] } },
+        data: { status: status === 'RESOLVED' ? 'VALIDATED' : 'CLOSED' },
+      });
+    }
     await this.audit.write({
       organizationId,
       userId: request.user?.id,

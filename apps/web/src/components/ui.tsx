@@ -1,5 +1,6 @@
-import { Loader2 } from 'lucide-react';
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { CircleHelp, Loader2 } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 const SEVERITY: Record<string, string> = {
   CRITICAL: 'bg-rose-600 text-white',
@@ -9,8 +10,130 @@ const SEVERITY: Record<string, string> = {
   INFO: 'bg-slate-500 text-white',
 };
 
+const SEVERITY_TIP: Record<string, string> = {
+  CRITICAL: 'Immediate risk. Prioritize containment and remediation.',
+  HIGH: 'Serious exposure. Schedule remediation soon.',
+  MEDIUM: 'Meaningful risk. Plan a fix with the asset owner.',
+  LOW: 'Limited impact. Track and remediate when practical.',
+  INFO: 'Informational finding. Useful context, usually not urgent.',
+};
+
+export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right';
+
+export function Tooltip({
+  content,
+  children,
+  placement = 'top',
+  delay = 280,
+  className = '',
+}: {
+  content: ReactNode;
+  children: ReactNode;
+  placement?: TooltipPlacement;
+  delay?: number;
+  className?: string;
+}) {
+  const tipId = useId();
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<CSSProperties>({});
+  const timer = useRef<number | null>(null);
+
+  function clearTimer() {
+    if (timer.current != null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+  }
+
+  function show() {
+    clearTimer();
+    timer.current = window.setTimeout(() => setOpen(true), delay);
+  }
+
+  function hide() {
+    clearTimer();
+    setOpen(false);
+  }
+
+  useEffect(() => () => clearTimer(), []);
+
+  useEffect(() => {
+    if (!open || !triggerRef.current) return;
+    function place() {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const gap = 8;
+      if (placement === 'bottom') {
+        setCoords({ top: rect.bottom + gap, left: rect.left + rect.width / 2, transform: 'translateX(-50%)' });
+      } else if (placement === 'left') {
+        setCoords({ top: rect.top + rect.height / 2, left: rect.left - gap, transform: 'translate(-100%, -50%)' });
+      } else if (placement === 'right') {
+        setCoords({ top: rect.top + rect.height / 2, left: rect.right + gap, transform: 'translateY(-50%)' });
+      } else {
+        setCoords({ top: rect.top - gap, left: rect.left + rect.width / 2, transform: 'translate(-50%, -100%)' });
+      }
+    }
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open, placement]);
+
+  return (
+    <span
+      ref={triggerRef}
+      className={`max-w-full ${className || 'inline-flex'}`}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+      aria-describedby={open ? tipId : undefined}
+    >
+      {children}
+      {open && content
+        ? createPortal(
+            <span
+              id={tipId}
+              role="tooltip"
+              className="pointer-events-none fixed z-[90] max-w-xs rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs leading-relaxed text-slate-900 shadow-lg dark:text-slate-100"
+              style={coords}
+            >
+              {content}
+            </span>,
+            document.body,
+          )
+        : null}
+    </span>
+  );
+}
+
+export function Hint({ label, tip, placement = 'top' }: { label: ReactNode; tip: string; placement?: TooltipPlacement }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span>{label}</span>
+      <Tooltip content={tip} placement={placement}>
+        <button
+          type="button"
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-mute hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          aria-label={typeof label === 'string' ? `About ${label}` : 'More information'}
+        >
+          <CircleHelp size={14} aria-hidden="true" />
+        </button>
+      </Tooltip>
+    </span>
+  );
+}
+
 export function Severity({ value }: { value: string }) {
-  return <span className={`rounded px-2 py-0.5 text-xs font-semibold tracking-wide ${SEVERITY[value] ?? SEVERITY.INFO}`}>{value}</span>;
+  return (
+    <Tooltip content={SEVERITY_TIP[value] ?? 'Finding severity from the scanner and risk model.'}>
+      <span className={`rounded px-2 py-0.5 text-xs font-semibold tracking-wide ${SEVERITY[value] ?? SEVERITY.INFO}`}>{value}</span>
+    </Tooltip>
+  );
 }
 
 export function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
@@ -38,12 +161,16 @@ export function PageLoading({ label }: { label: string }) {
   );
 }
 
-export function Panel({ title, children, action }: { title?: string; children: ReactNode; action?: ReactNode }) {
+export function Panel({ title, tip, children, action }: { title?: string; tip?: string; children: ReactNode; action?: ReactNode }) {
   return (
     <section className="rounded-lg border border-line bg-panel p-4">
       {(title || action) && (
         <div className="mb-4 flex items-center justify-between gap-3">
-          {title ? <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h2> : <span />}
+          {title ? (
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {tip ? <Hint label={title} tip={tip} /> : title}
+            </h2>
+          ) : <span />}
           {action}
         </div>
       )}

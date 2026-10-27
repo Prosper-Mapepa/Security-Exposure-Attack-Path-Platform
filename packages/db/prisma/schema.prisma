@@ -188,6 +188,7 @@ model Organization {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
   memberships Membership[]
+  roles       OrganizationRole[]
   teams       Team[]
   assets      Asset[]
   findings    Finding[]
@@ -236,6 +237,7 @@ model User {
   incidentNotes     IncidentNote[]
   notifications     Notification[]
   uploadedEvidence  RemediationEvidence[]
+  auditLogs         AuditLog[]
 
   @@index([deletedAt])
 }
@@ -245,13 +247,31 @@ model Membership {
   userId         String
   organizationId String
   role           RoleName
+  roleId         String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationRole OrganizationRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
 
   @@unique([userId, organizationId])
   @@index([organizationId, role])
+}
+
+model OrganizationRole {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String   @default("")
+  permissions    String[]
+  system         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships    Membership[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
 }
 
 model Team {
@@ -1052,6 +1072,7 @@ model AuditLog {
   metadata       Json?
   createdAt      DateTime @default(now())
   organization   Organization? @relation(fields: [organizationId], references: [id])
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, createdAt])
   @@index([resource, resourceId])

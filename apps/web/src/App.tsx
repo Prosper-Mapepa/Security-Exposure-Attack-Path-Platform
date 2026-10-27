@@ -8,7 +8,7 @@ import { HowItWorksPage } from './pages/HowItWorksPage';
 import { LandingPage } from './pages/LandingPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DeveloperPage, FindingDetailPage, FindingsPage } from './pages/FindingsPages';
-import { AttackPathsPage, AuditPage, EventsPage, IncidentsPage, RemediationsPage, ReportsPage, ScansPage, SettingsPage } from './pages/OperationsPages';
+import { AttackPathsPage, AuditPage, EventsPage, IncidentsPage, RemediationsPage, ReportsPage, ScanDetailPage, ScansPage, SettingsPage } from './pages/OperationsPages';
 
 function Protected() {
   const { user, loading } = useAuth();
@@ -52,6 +52,7 @@ export function App() {
         <Route path="/findings" element={<FindingsPage />} />
         <Route path="/findings/:id" element={<FindingDetailPage />} />
         <Route path="/scans" element={<ScansPage />} />
+        <Route path="/scans/:id" element={<ScanDetailPage />} />
         <Route path="/attack-paths" element={<AttackPathsPage />} />
         <Route path="/incidents" element={<IncidentsPage />} />
         <Route path="/remediations" element={<RemediationsPage />} />

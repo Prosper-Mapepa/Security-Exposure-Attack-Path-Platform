@@ -11,6 +11,7 @@ import { requireOrganization } from '../../common/tenant';
 import type { AppRequest } from '../../common/types';
 import { ZodValidationPipe } from '../../common/zod.pipe';
 import { AuditService } from '../audit/audit.service';
+import { resolveRoleAssignment } from './roles';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -28,9 +29,17 @@ export class UsersController {
     const organizationId = requireOrganization(request.user!, organizationHeader);
     const memberships = await this.prisma.db.membership.findMany({
       where: { organizationId, user: { deletedAt: null } },
-      include: { user: { select: { id: true, email: true, name: true, lastLoginAt: true, createdAt: true } } },
+      include: {
+        user: { select: { id: true, email: true, name: true, lastLoginAt: true, createdAt: true } },
+        organizationRole: { select: { id: true, name: true, system: true } },
+      },
+      orderBy: { user: { name: 'asc' } },
     });
-    return memberships.map((membership) => ({ ...membership.user, role: membership.role }));
+    return memberships.map((membership) => ({
+      ...membership.user,
+      role: membership.organizationRole?.name ?? membership.role,
+      roleKey: membership.organizationRole && !membership.organizationRole.system ? membership.organizationRole.id : membership.role,
+    }));
   }
 
   @Post('users')
@@ -48,10 +57,11 @@ export class UsersController {
       data: { email, name: body.name, passwordHash: await hashPassword(body.password) },
     }));
     if (existing?.isPlatformAdmin) throw new BadRequestException('That account cannot be added');
+    const assignment = await resolveRoleAssignment(this.prisma, organizationId, body.role);
     await this.prisma.db.membership.upsert({
       where: { userId_organizationId: { userId: user.id, organizationId } },
-      create: { userId: user.id, organizationId, role: body.role },
-      update: { role: body.role },
+      create: { userId: user.id, organizationId, role: assignment.role, roleId: assignment.roleId },
+      update: { role: assignment.role, roleId: assignment.roleId },
     });
     await this.audit.write({
       organizationId,
@@ -61,9 +71,9 @@ export class UsersController {
       resourceId: user.id,
       ip: clientIp(request.header('x-forwarded-for'), request.ip),
       userAgent: request.header('user-agent'),
-      metadata: { role: body.role },
+      metadata: { role: assignment.name },
     });
-    return { id: user.id, email: user.email, name: user.name, role: body.role };
+    return { id: user.id, email: user.email, name: user.name, role: assignment.name, roleKey: assignment.roleId ?? assignment.role };
   }
 
   @Patch('users/:id')
@@ -78,7 +88,11 @@ export class UsersController {
     const organizationId = requireOrganization(request.user!, organizationHeader);
     const membership = await this.prisma.db.membership.findUnique({ where: { userId_organizationId: { userId: id, organizationId } } });
     if (!membership) throw new NotFoundException('Member was not found');
-    const updated = await this.prisma.db.membership.update({ where: { id: membership.id }, data: { role: body.role } });
+    const assignment = await resolveRoleAssignment(this.prisma, organizationId, body.role);
+    const updated = await this.prisma.db.membership.update({
+      where: { id: membership.id },
+      data: { role: assignment.role, roleId: assignment.roleId },
+    });
     await this.audit.write({
       organizationId,
       userId: request.user?.id,
@@ -87,9 +101,9 @@ export class UsersController {
       resourceId: id,
       ip: clientIp(request.header('x-forwarded-for'), request.ip),
       userAgent: request.header('user-agent'),
-      metadata: { role: body.role },
+      metadata: { role: assignment.name },
     });
-    return updated;
+    return { ...updated, role: assignment.name, roleKey: assignment.roleId ?? assignment.role };
   }
 
   @Delete('users/:id')

@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
-import { hasPermission, type Permission } from '@seap/shared';
+import type { Permission } from '@seap/shared';
 import { timingSafeEqual } from 'node:crypto';
 import { IS_PUBLIC, PERMISSIONS_KEY } from '../../common/decorators';
 import type { AppRequest } from '../../common/types';
@@ -40,7 +40,7 @@ export class PermissionsGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AppRequest>();
     const user = request.user;
     if (!user) throw new UnauthorizedException('Authentication required');
-    const allowed = required.every((permission) => hasPermission(user.role, permission));
+    const allowed = required.every((permission) => user.permissions.includes(permission));
     if (!allowed) throw new ForbiddenException('Insufficient permissions');
     return true;
   }

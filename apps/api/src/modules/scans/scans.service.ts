@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableE
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Prisma, ScannerType, ScanTargetType } from '@seap/db';
 import { createScanner } from '@seap/scanner-adapters';
-import { assertSafeScanUrl, isPathInsideAllowlist } from '@seap/security';
+import { assertSafeScanUrl, isPathInsideAllowlist, resolveScanAllowlist } from '@seap/security';
 import type { Queue } from 'bullmq';
 import { clientIp, pageWindow } from '../../common/http';
 import { PrismaService } from '../../common/prisma.module';
@@ -87,7 +87,24 @@ export class ScansService {
   async get(organizationId: string, id: string) {
     const scan = await this.prisma.db.scan.findFirst({
       where: { id, organizationId },
-      include: { targets: true, result: true, logs: { orderBy: { createdAt: 'asc' }, take: 500 }, asset: true },
+      include: {
+        targets: true,
+        result: true,
+        logs: { orderBy: { createdAt: 'asc' }, take: 200 },
+        asset: { select: { id: true, name: true } },
+        findings: {
+          where: { deletedAt: null },
+          orderBy: { riskScore: 'desc' },
+          select: {
+            id: true,
+            title: true,
+            severity: true,
+            status: true,
+            location: true,
+            vulnerabilityId: true,
+          },
+        },
+      },
     });
     if (!scan) throw new NotFoundException('Scan was not found');
     return scan;
@@ -132,7 +149,7 @@ export class ScansService {
 
   private async assertTarget(targetType: ScanTargetType, location: string) {
     if (targetType === 'PATH') {
-      const allowlist = (process.env.SCAN_PATH_ALLOWLIST ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+      const allowlist = resolveScanAllowlist(process.env.SCAN_PATH_ALLOWLIST);
       if (!isPathInsideAllowlist(location, allowlist)) {
         throw new BadRequestException('Scan path is outside the configured allowlist');
       }

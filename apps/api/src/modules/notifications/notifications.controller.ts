@@ -15,6 +15,7 @@ export class NotificationsController {
   @RequirePermissions('notification:read')
   @ApiOperation({ summary: 'List in-app notifications' })
   list(@Req() request: AppRequest, @Headers('x-organization-id') organizationHeader: string | undefined) {
+    if (request.user?.isPlatformAdmin && !request.user.organizationId && !organizationHeader) return [];
     const organizationId = requireOrganization(request.user!, organizationHeader);
     return this.prisma.db.notification.findMany({
       where: { organizationId, OR: [{ userId: request.user!.id }, { userId: null }] },

@@ -165,30 +165,56 @@ export class AssetsService {
   }
 
   async update(organizationId: string, id: string, input: Partial<CreateAssetInput>, request: AppRequest) {
-    await this.get(organizationId, id);
+    const existing = await this.get(organizationId, id);
+    const nextType = input.type ?? existing.type;
     const asset = await this.prisma.db.asset.update({
       where: { id },
       data: {
-        name: input.name,
-        description: input.description,
-        environment: input.environment,
-        criticality: input.criticality,
-        exposure: input.exposure,
-        dataSensitivity: input.dataSensitivity,
-        technology: input.technology,
-        businessService: input.businessService,
-        ownerId: input.ownerId,
-        teamId: input.teamId,
-        authRequired: input.authRequired,
-        privilegeRequired: input.privilegeRequired,
-        internetFacing: input.internetFacing,
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.type !== undefined ? { type: input.type } : {}),
+        ...(input.environment !== undefined ? { environment: input.environment } : {}),
+        ...(input.criticality !== undefined ? { criticality: input.criticality } : {}),
+        ...(input.exposure !== undefined ? { exposure: input.exposure } : {}),
+        ...(input.dataSensitivity !== undefined ? { dataSensitivity: input.dataSensitivity } : {}),
+        ...(input.technology !== undefined ? { technology: input.technology || null } : {}),
+        ...(input.businessService !== undefined ? { businessService: input.businessService || null } : {}),
+        ...(input.ownerId !== undefined ? { ownerId: input.ownerId || null } : {}),
+        ...(input.teamId !== undefined ? { teamId: input.teamId || null } : {}),
+        ...(input.authRequired !== undefined ? { authRequired: input.authRequired } : {}),
+        ...(input.privilegeRequired !== undefined ? { privilegeRequired: input.privilegeRequired } : {}),
+        internetFacing: input.internetFacing ?? (input.exposure !== undefined ? input.exposure === 'PUBLIC' : existing.internetFacing),
         lastSeenAt: new Date(),
       },
     });
+    if (input.type && input.type !== existing.type) {
+      await this.replaceDetail(id, {
+        name: asset.name,
+        type: input.type,
+        environment: asset.environment,
+        criticality: asset.criticality,
+        exposure: asset.exposure,
+        dataSensitivity: asset.dataSensitivity,
+        detail: input.detail,
+      });
+    }
     if (input.tags) {
       await this.prisma.db.assetTag.deleteMany({ where: { assetId: id } });
       await this.prisma.db.assetTag.createMany({ data: input.tags.map((value) => ({ assetId: id, value })) });
     }
+    await this.prisma.db.networkNode.updateMany({
+      where: { assetId: id },
+      data: {
+        label: asset.name,
+        kind: kindFor(nextType, input.detail),
+        properties: {
+          exposure: asset.exposure,
+          criticality: asset.criticality,
+          dataSensitivity: asset.dataSensitivity,
+          privileged: nextType === 'IAM_ROLE' ? Boolean(input.detail?.privileged ?? existing.iamRole?.privileged) : false,
+        },
+      },
+    });
     await this.audit.write({
       organizationId,
       userId: request.user?.id,
@@ -288,6 +314,24 @@ export class AssetsService {
       metadata: { type },
     });
     return relationship;
+  }
+
+  private async replaceDetail(assetId: string, input: CreateAssetInput) {
+    await this.prisma.db.$transaction(async (tx) => {
+      await tx.application.deleteMany({ where: { assetId } });
+      await tx.api.deleteMany({ where: { assetId } });
+      await tx.repository.deleteMany({ where: { assetId } });
+      await tx.cloudAccount.deleteMany({ where: { assetId } });
+      await tx.cloudResource.deleteMany({ where: { assetId } });
+      await tx.container.deleteMany({ where: { assetId } });
+      await tx.containerImage.deleteMany({ where: { assetId } });
+      await tx.kubernetesCluster.deleteMany({ where: { assetId } });
+      await tx.kubernetesWorkload.deleteMany({ where: { assetId } });
+      await tx.identity.deleteMany({ where: { assetId } });
+      await tx.serviceAccount.deleteMany({ where: { assetId } });
+      await tx.iamRole.deleteMany({ where: { assetId } });
+      await this.createDetail(tx, assetId, input);
+    });
   }
 
   private async createDetail(tx: Prisma.TransactionClient, assetId: string, input: CreateAssetInput) {

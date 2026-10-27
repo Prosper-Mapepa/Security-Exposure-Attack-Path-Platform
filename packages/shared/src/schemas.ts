@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PERMISSIONS } from './permissions';
 
 export const passwordSchema = z
   .string()
@@ -317,15 +318,31 @@ export const createPolicySchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+const roleNameSchema = z.string().trim().min(2).max(80).regex(/^[A-Za-z][A-Za-z0-9 _-]*$/, 'Use letters, numbers, spaces, or hyphens');
+
 export const createUserSchema = z.object({
   email: z.string().email().max(320),
   name: z.string().min(2).max(120),
   password: passwordSchema,
-  role: z.enum(['SECURITY_ADMIN', 'SECURITY_ANALYST', 'ENGINEER', 'VIEWER']),
+  role: z.string().trim().min(2).max(80),
 });
 
 export const updateMemberSchema = z.object({
-  role: z.enum(['SECURITY_ADMIN', 'SECURITY_ANALYST', 'ENGINEER', 'VIEWER']),
+  role: z.string().trim().min(2).max(80),
+});
+
+export const createRoleSchema = z.object({
+  name: roleNameSchema,
+  description: z.string().trim().max(400).default(''),
+  permissions: z.array(z.enum(PERMISSIONS)).min(1),
+});
+
+export const updateRoleSchema = z.object({
+  name: roleNameSchema.optional(),
+  description: z.string().trim().max(400).optional(),
+  permissions: z.array(z.enum(PERMISSIONS)).min(1).optional(),
+}).refine((value) => value.name !== undefined || value.description !== undefined || value.permissions !== undefined, {
+  message: 'Nothing to update',
 });
 
 export const createTeamSchema = z.object({

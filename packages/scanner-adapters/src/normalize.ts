@@ -40,6 +40,18 @@ export function cweFromMetadata(value: unknown): string | undefined {
   return undefined;
 }
 
+const SEVERITY_CVSS: Record<Severity, number> = {
+  CRITICAL: 9.5,
+  HIGH: 7.5,
+  MEDIUM: 5,
+  LOW: 2.5,
+  INFO: 0,
+};
+
+export function cvssFromSeverity(severity: Severity): number {
+  return SEVERITY_CVSS[severity];
+}
+
 export function buildFinding(
   input: Omit<NormalizedFinding, 'fingerprint' | 'dedupKey' | 'evidence' | 'description' | 'title'> & {
     title: string;
@@ -63,7 +75,7 @@ export function buildFinding(
     confidence: input.confidence,
     cve: input.cve,
     cwe: input.cwe,
-    cvss: input.cvss,
+    cvss: input.cvss ?? cvssFromSeverity(input.severity),
     affectedComponent: input.affectedComponent,
     location: input.location,
     evidence,

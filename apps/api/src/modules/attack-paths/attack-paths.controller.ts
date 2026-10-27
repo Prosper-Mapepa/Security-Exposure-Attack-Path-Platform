@@ -1,7 +1,7 @@
 import { Controller, Get, Headers, NotFoundException, Param, Post, Req } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Queue } from 'bullmq';
+import { QueueEvents, type Queue } from 'bullmq';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { RequirePermissions } from '../../common/decorators';
 import { PrismaService } from '../../common/prisma.module';
@@ -46,12 +46,16 @@ export class AttackPathsController {
   @ApiOperation({ summary: 'Queue attack-path discovery from the stored relationship graph' })
   async rebuild(@Req() request: AppRequest, @Headers('x-organization-id') organizationHeader: string | undefined) {
     const organizationId = requireOrganization(request.user!, organizationHeader);
+    const events = new QueueEvents('graph', { connection: { url: process.env.REDIS_URL ?? 'redis://localhost:6379' } });
     try {
-      await this.queue.add('rebuild', { organizationId }, { removeOnComplete: 50 });
+      const job = await this.queue.add('rebuild', { organizationId }, { removeOnComplete: 50 });
+      await job.waitUntilFinished(events, 30_000);
     } catch {
-      throw new ServiceUnavailableException('Graph queue is unavailable');
+      throw new ServiceUnavailableException('Attack-path rebuild did not finish. Confirm the worker is running.');
+    } finally {
+      await events.close();
     }
-    return { status: 'queued' };
+    return { status: 'completed' };
   }
 
   @Get('network/nodes')

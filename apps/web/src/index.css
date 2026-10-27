@@ -25,6 +25,34 @@ body {
   min-height: 100vh;
   background: rgb(var(--ink));
   color: rgb(15 23 42);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+.seap-wordmark {
+  font-family: Fraunces, "Times New Roman", serif;
+  font-variation-settings: "SOFT" 40, "WONK" 0.4;
+}
+
+.seap-wordmark-teal {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: #2db8a6;
+  text-shadow: 0 0 18px rgba(45, 184, 166, 0.35);
+}
+
+.dark .seap-wordmark-teal {
+  color: #5ecfc0;
+  text-shadow: 0 0 22px rgba(45, 184, 166, 0.5);
+}
+
+.seap-logo-route {
+  stroke-dasharray: 4 6;
+  animation: seap-dash 10s linear infinite;
+}
+
+.seap-logo-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: seap-ring 3.2s ease-out infinite;
 }
 
 .dark body {
@@ -92,11 +120,24 @@ textarea:focus-visible {
   to { opacity: 1; transform: none; }
 }
 
+@keyframes seap-scan {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
+}
+
+.seap-scan-bar {
+  width: 40%;
+  animation: seap-scan 1.1s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .seap-route,
   .seap-entry,
   .seap-sink,
-  .seap-rise {
+  .seap-rise,
+  .seap-scan-bar,
+  .seap-logo-route,
+  .seap-logo-ring {
     animation: none;
   }
 }

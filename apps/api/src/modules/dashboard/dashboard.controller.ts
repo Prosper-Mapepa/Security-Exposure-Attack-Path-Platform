@@ -15,6 +15,9 @@ export class DashboardController {
   @RequirePermissions('dashboard:read')
   @ApiOperation({ summary: 'Security posture metrics computed from stored findings' })
   summary(@Req() request: AppRequest, @Headers('x-organization-id') organizationHeader: string | undefined) {
+    if (request.user?.isPlatformAdmin && !request.user.organizationId && !organizationHeader) {
+      return { empty: true, message: 'No security data available' };
+    }
     return this.dashboard.summary(requireOrganization(request.user!, organizationHeader));
   }
 }
