@@ -11,6 +11,7 @@ server {
     proxy_send_timeout 20s;
     proxy_read_timeout 20s;
     proxy_next_upstream error timeout http_502 http_503 http_504;
+    proxy_ssl_server_name on;
     proxy_set_header Host $proxy_host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -46,7 +47,7 @@ server {
 
   location @api_down {
     default_type application/json;
-    return 502 '{"error":{"message":"API is unreachable. Set web API_UPSTREAM to http://api.railway.internal:8080 and api PORT=8080, then redeploy both."}}';
+    return 502 '{"error":{"message":"API is unreachable. On Railway: api service Online, named api, PORT=8080; web API_UPSTREAM=http://api.railway.internal:8080. Redeploy api then web."}}';
   }
 
   location / {

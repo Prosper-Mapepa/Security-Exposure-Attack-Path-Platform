@@ -22,8 +22,8 @@ async function bootstrap() {
     .build();
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 4000);
-  // Bind IPv4 explicitly — Railway private networking reaches the service over IPv4.
-  await app.listen(port, '0.0.0.0');
+  // Railway private DNS often resolves to IPv6. Bind :: (dual-stack) so both work.
+  await app.listen(port, '::');
 }
 
 void bootstrap();

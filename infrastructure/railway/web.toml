@@ -11,3 +11,5 @@ restartPolicyMaxRetries = 5
 [variables]
 API_UPSTREAM = "http://api.railway.internal:8080"
 API_PORT = "8080"
+# Optional fallback if private networking fails: set to the api public https URL
+# API_PUBLIC_URL = "https://api-xxxx.up.railway.app"
