@@ -7,3 +7,7 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
+
+# Stable private port so web can use http://api.railway.internal:8080
+[variables]
+PORT = "8080"
