@@ -25,12 +25,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   async function refresh() {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 8000);
     try {
-      const result = await api.get<{ user: SessionUser }>('/api/auth/me');
+      const result = await api.get<{ user: SessionUser }>('/api/auth/me', { signal: controller.signal });
       setUser(result.user);
     } catch {
       setUser(null);
     } finally {
+      window.clearTimeout(timer);
       setLoading(false);
     }
   }

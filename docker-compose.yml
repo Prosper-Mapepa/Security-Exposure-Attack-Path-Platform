@@ -76,6 +76,8 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/web.Dockerfile
+    environment:
+      API_UPSTREAM: http://api:4000
     ports:
       - "127.0.0.1:8080:80"
     depends_on:

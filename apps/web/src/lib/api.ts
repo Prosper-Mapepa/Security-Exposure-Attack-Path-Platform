@@ -26,6 +26,7 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
       method: 'POST',
       credentials: 'include',
       headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
+      signal: init.signal,
     });
     if (refreshed.ok) {
       const body = (await refreshed.json()) as { csrfToken?: string };
@@ -55,7 +56,7 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, init?: RequestInit) => request<T>(path, init),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body instanceof FormData ? body : JSON.stringify(body ?? {}) }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) }),

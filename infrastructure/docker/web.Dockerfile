@@ -9,7 +9,8 @@ RUN npm run build -w @seap/shared && npm run build -w @seap/web
 
 FROM nginx:1.27-alpine
 ENV PORT=80
-ENV API_UPSTREAM=http://api:4000
+# Overridden in docker-compose. On Railway set API_UPSTREAM=http://api.railway.internal:<api PORT>.
+ENV API_UPSTREAM=http://api.railway.internal:8080
 COPY infrastructure/docker/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
