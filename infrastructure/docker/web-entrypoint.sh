@@ -1,11 +1,25 @@
 #!/bin/sh
 set -eu
 
-# Railway / Docker DNS — required when proxy_pass uses a variable.
-DNS_RESOLVER="$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf 2>/dev/null || true)"
-if [ -z "${DNS_RESOLVER}" ]; then
-  DNS_RESOLVER="127.0.0.11"
+# Nginx requires IPv6 resolver addresses in brackets: resolver [fd12::10];
+format_resolver() {
+  addr="$1"
+  case "$addr" in
+    \[*\]) echo "$addr" ;;
+    *:*) echo "[$addr]" ;;
+    *) echo "$addr" ;;
+  esac
+}
+
+# Prefer IPv4 nameserver; fall back to bracketed IPv6.
+DNS_RAW="$(awk '/^nameserver/ && $2 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { print $2; exit }' /etc/resolv.conf 2>/dev/null || true)"
+if [ -z "${DNS_RAW}" ]; then
+  DNS_RAW="$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf 2>/dev/null || true)"
 fi
+if [ -z "${DNS_RAW}" ]; then
+  DNS_RAW="127.0.0.11"
+fi
+DNS_RESOLVER="$(format_resolver "$DNS_RAW")"
 export DNS_RESOLVER
 
 probe() {
