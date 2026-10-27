@@ -78,12 +78,13 @@ export class DashboardService {
     ].filter((value) => value > 0);
     const mttrHours = durations.length
       ? Math.round((durations.reduce((sum, value) => sum + value, 0) / durations.length / 3_600_000) * 10) / 10
-      : null;
+      : 0;
     const assetIds = byAsset.map((row) => row.assetId);
     const assets = await this.prisma.db.asset.findMany({ where: { id: { in: assetIds } }, select: { id: true, name: true } });
     return {
       empty: false,
-      securityRiskScore: openScores._avg.riskScore == null ? null : Math.round(openScores._avg.riskScore),
+      // No open findings → posture is 0, not unknown.
+      securityRiskScore: openScores._avg.riskScore == null ? 0 : Math.round(openScores._avg.riskScore),
       openCritical: count('CRITICAL'),
       openHigh: count('HIGH'),
       openMedium: count('MEDIUM'),

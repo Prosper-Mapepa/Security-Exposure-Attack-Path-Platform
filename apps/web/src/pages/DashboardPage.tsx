@@ -22,7 +22,7 @@ interface Summary {
 }
 
 const METRIC_TIPS: Record<string, string> = {
-  'Risk score': 'Average risk of open findings, 0–100. Higher means more urgent exposure.',
+  'Risk score': 'Average risk of open findings, 0–100. Higher means more urgent exposure. 0 when nothing is open.',
   'Open critical': 'Open findings scored Critical that still need triage or a fix.',
   'Open high': 'Open findings scored High that still need triage or a fix.',
   'Internet-facing assets': 'Assets marked public or internet-facing in inventory.',
@@ -30,7 +30,7 @@ const METRIC_TIPS: Record<string, string> = {
   'Attack paths': 'Stored routes from exposure through a vulnerability to a sensitive sink.',
   'Active incidents': 'Incidents that are not yet resolved or closed.',
   'Overdue remediation': 'Remediation work past its due date that is not validated or closed.',
-  'Mean time to remediate (hours)': 'Average hours from first seen to mitigated or resolved. Shows n/a until findings are closed.',
+  'Mean time to remediate (hours)': 'Average hours from first seen to mitigated or resolved. 0 until findings are closed.',
 };
 
 function CountBars({ rows }: { rows: Array<{ source: string; count: number }> }) {
@@ -68,7 +68,7 @@ export function DashboardPage() {
     );
   }
   const cards = [
-    ['Risk score', data.securityRiskScore ?? 'n/a'],
+    ['Risk score', data.securityRiskScore ?? 0],
     ['Open critical', data.openCritical ?? 0],
     ['Open high', data.openHigh ?? 0],
     ['Internet-facing assets', data.internetFacingAssets ?? 0],
@@ -76,7 +76,7 @@ export function DashboardPage() {
     ['Attack paths', data.attackPaths ?? 0],
     ['Active incidents', data.activeIncidents ?? 0],
     ['Overdue remediation', data.overdueRemediation ?? 0],
-    ['Mean time to remediate (hours)', data.meanTimeToRemediateHours == null ? 'n/a' : data.meanTimeToRemediateHours],
+    ['Mean time to remediate (hours)', data.meanTimeToRemediateHours ?? 0],
   ] as const;
   return (
     <div className="space-y-6">

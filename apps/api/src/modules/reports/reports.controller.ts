@@ -102,7 +102,7 @@ export class ReportsController {
     if ('empty' in summary && summary.empty) {
       doc.text('No security data available');
     } else if (!summary.empty) {
-      doc.text(`Risk score: ${summary.securityRiskScore ?? 'n/a'}`);
+      doc.text(`Risk score: ${summary.securityRiskScore ?? 0}`);
       doc.text(`Open critical: ${summary.openCritical}`);
       doc.text(`Open high: ${summary.openHigh}`);
       doc.text(`Attack paths: ${summary.attackPaths}`);
