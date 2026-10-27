@@ -1,7 +1,7 @@
 import { Bell, Compass, Moon, Sun } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, clearCsrf } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { clearTourCompleted } from '../lib/tour';
 import { SeapMark, SeapWordmark } from './SeapLogo';
@@ -90,10 +90,13 @@ export function Shell() {
     setSigningOut(true);
     try {
       await api.post('/api/auth/logout');
-      setUser(null);
-      navigate('/login');
+    } catch {
+      // Clear the local session even if the revoke call fails (e.g. expired CSRF).
     } finally {
+      clearCsrf();
+      setUser(null);
       setSigningOut(false);
+      navigate('/login');
     }
   }
 

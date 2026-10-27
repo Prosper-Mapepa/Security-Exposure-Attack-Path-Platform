@@ -7,11 +7,28 @@ export class ApiError extends Error {
   }
 }
 
-let csrfToken = sessionStorage.getItem('seap_csrf') ?? '';
+function csrfFromCookie(): string {
+  if (typeof document === 'undefined') return '';
+  const row = document.cookie.split('; ').find((part) => part.startsWith('seap_csrf='));
+  if (!row) return '';
+  return decodeURIComponent(row.slice('seap_csrf='.length));
+}
+
+let csrfToken = sessionStorage.getItem('seap_csrf') ?? csrfFromCookie();
 
 export function setCsrf(token: string) {
   csrfToken = token;
   sessionStorage.setItem('seap_csrf', token);
+}
+
+/** Double-submit: header must match the cookie the browser will send. */
+function activeCsrf(): string {
+  const fromCookie = csrfFromCookie();
+  if (fromCookie) {
+    if (fromCookie !== csrfToken) setCsrf(fromCookie);
+    return fromCookie;
+  }
+  return csrfToken;
 }
 
 function gatewayMessage(status: number) {
@@ -47,18 +64,26 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  if (csrfToken) headers.set('x-csrf-token', csrfToken);
+  const csrf = activeCsrf();
+  if (csrf) headers.set('x-csrf-token', csrf);
   const response = await fetch(path, { ...init, headers, credentials: 'include' });
   if (response.status === 401 && retry && !path.startsWith('/api/auth/')) {
     const refreshed = await fetch('/api/auth/refresh', {
       method: 'POST',
       credentials: 'include',
-      headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
+      headers: csrf ? { 'x-csrf-token': csrf } : {},
       signal: init.signal,
     });
     if (refreshed.ok) {
       const body = parsePayload(await refreshed.text());
       if (body.csrfToken) setCsrf(body.csrfToken);
+      return request(path, init, false);
+    }
+  }
+  if (response.status === 403 && retry && path !== '/api/auth/csrf') {
+    const message = (await response.clone().text()) || '';
+    if (message.includes('CSRF')) {
+      await ensureCsrf();
       return request(path, init, false);
     }
   }
@@ -72,6 +97,7 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
     const message = details.length && (!base || base === 'Validation failed') ? details.join(' ') : base;
     throw new ApiError(message || gatewayMessage(response.status), response.status);
   }
+  if (payload.csrfToken) setCsrf(payload.csrfToken);
   return payload as T;
 }
 
@@ -87,4 +113,9 @@ export const api = {
 export async function ensureCsrf() {
   const result = await api.get<{ csrfToken: string }>('/api/auth/csrf');
   setCsrf(result.csrfToken);
+}
+
+export function clearCsrf() {
+  csrfToken = '';
+  sessionStorage.removeItem('seap_csrf');
 }
