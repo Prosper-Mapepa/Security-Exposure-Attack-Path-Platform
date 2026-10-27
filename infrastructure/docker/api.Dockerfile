@@ -15,5 +15,8 @@ COPY packages/integrations/package.json packages/integrations/
 RUN npm install
 COPY . .
 RUN npm run build -w @seap/shared && npm run build -w @seap/security && npm run build -w @seap/risk-engine && npm run build -w @seap/attack-path-engine && npm run build -w @seap/scanner-adapters && npm run build -w @seap/integrations && npm run prisma:generate -w @seap/db && npm run build -w @seap/db && npm run build -w @seap/api
-EXPOSE 4000
+# Pin a stable listen port so web can use http://api.railway.internal:8080.
+# Also set PORT=8080 in the Railway api service Variables tab (overrides any random assign).
+ENV PORT=8080
+EXPOSE 8080
 CMD ["sh", "-c", "npm run prisma:deploy -w @seap/db && npm run seed -w @seap/db && node apps/api/dist/main.js"]

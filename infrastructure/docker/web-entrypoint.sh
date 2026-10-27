@@ -1,10 +1,16 @@
 #!/bin/sh
 set -eu
 
+# Railway / Docker DNS — required when proxy_pass uses a variable.
+DNS_RESOLVER="$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf 2>/dev/null || true)"
+if [ -z "${DNS_RESOLVER}" ]; then
+  DNS_RESOLVER="127.0.0.11"
+fi
+export DNS_RESOLVER
+
 probe() {
   url="$1"
   [ -n "$url" ] || return 1
-  # Prefer IPv6 first (Railway private), then any.
   wget -6 -q -O /dev/null -T 2 "${url}/health" 2>/dev/null && return 0
   wget -4 -q -O /dev/null -T 2 "${url}/health" 2>/dev/null && return 0
   wget -q -O /dev/null -T 2 "${url}/health" 2>/dev/null
@@ -17,6 +23,7 @@ log_dns() {
 
 chosen="${API_UPSTREAM:-}"
 log_dns "api.railway.internal"
+echo "SEAP web: resolver ${DNS_RESOLVER}, configured upstream ${chosen:-none}" >&2
 
 if ! probe "$chosen"; then
   for candidate in \
@@ -37,7 +44,7 @@ fi
 
 if [ -z "${chosen}" ]; then
   chosen="${API_UPSTREAM:-http://api.railway.internal:8080}"
-  echo "SEAP web: no healthy API found; using ${chosen}" >&2
+  echo "SEAP web: no healthy API found at boot; using ${chosen}" >&2
 else
   echo "SEAP web: proxying API at ${chosen}"
 fi

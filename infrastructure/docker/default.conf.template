@@ -4,8 +4,12 @@ server {
   root /usr/share/nginx/html;
   client_max_body_size 6m;
 
+  # Variable proxy_pass forces per-request DNS (Railway private IPs change across deploys).
+  resolver ${DNS_RESOLVER} valid=10s ipv6=on;
+
   location /api/ {
-    proxy_pass ${API_UPSTREAM};
+    set $seap_api "${API_UPSTREAM}";
+    proxy_pass $seap_api;
     proxy_http_version 1.1;
     proxy_connect_timeout 3s;
     proxy_send_timeout 20s;
@@ -20,26 +24,32 @@ server {
   }
 
   location /health {
-    proxy_pass ${API_UPSTREAM}/health;
+    set $seap_api "${API_UPSTREAM}";
+    proxy_pass $seap_api/health;
     proxy_connect_timeout 3s;
     proxy_read_timeout 5s;
+    proxy_ssl_server_name on;
     proxy_set_header Host $proxy_host;
     error_page 502 503 504 = @api_down;
   }
 
   location /ready {
-    proxy_pass ${API_UPSTREAM}/ready;
+    set $seap_api "${API_UPSTREAM}";
+    proxy_pass $seap_api/ready;
     proxy_connect_timeout 3s;
     proxy_read_timeout 5s;
+    proxy_ssl_server_name on;
     proxy_set_header Host $proxy_host;
     error_page 502 503 504 = @api_down;
   }
 
   location /ws/ {
-    proxy_pass ${API_UPSTREAM};
+    set $seap_api "${API_UPSTREAM}";
+    proxy_pass $seap_api;
     proxy_http_version 1.1;
     proxy_connect_timeout 3s;
     proxy_read_timeout 3600s;
+    proxy_ssl_server_name on;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $proxy_host;
@@ -47,7 +57,7 @@ server {
 
   location @api_down {
     default_type application/json;
-    return 502 '{"error":{"message":"API is unreachable. On Railway: api service Online, named api, PORT=8080; web API_UPSTREAM=http://api.railway.internal:8080. Redeploy api then web."}}';
+    return 502 '{"error":{"message":"API is unreachable. On the api service add PORT=8080, redeploy api, then redeploy web. web API_UPSTREAM must stay http://api.railway.internal:8080."}}';
   }
 
   location / {
